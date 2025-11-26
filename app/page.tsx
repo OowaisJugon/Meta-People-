@@ -1,66 +1,365 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+import { useEffect, useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { signOut, getCurrentUser, isAuthenticated } from "@/lib/auth";
+import toast, { Toaster } from "react-hot-toast";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
+import './styles.css';
+
+interface People {
+  user_id: number;
+  emp_code: string;
+  Name: string;
+  Email: string;
+  Phone: string;
+}
 
 export default function Home() {
+  const router = useRouter();
+  const [people, setPeople] = useState<People[]>([]);
+  const [filteredPeople, setFilteredPeople] = useState<People[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [form, setForm] = useState<People>({
+    user_id: 0,
+    emp_code: "",
+    Name: "",
+    Email: "",
+    Phone: "",
+  });
+  const [editUserId, setEditUserId] = useState<number | null>(null);
+
+  // Check authentication on mount
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push("/login");
+    } else {
+      setCurrentUser(getCurrentUser());
+    }
+  }, [router]);
+
+  // ---------------- Fetch People ----------------
+  async function fetchPeople() {
+    const { data, error } = await supabase.from("metapeople").select("*").order("user_id", { ascending: true });
+    if (error) toast.error(`Failed to fetch: ${error.message}`);
+    else setPeople(data || []);
+  }
+
+  useEffect(() => { fetchPeople(); }, []);
+
+  // ---------------- Search Filter ----------------
+  useEffect(() => {
+    const query = searchQuery.toLowerCase();
+    setFilteredPeople(
+      people.filter((person) => {
+        return (
+          person.user_id.toString().includes(query) ||
+          (person.emp_code?.toLowerCase() || "").includes(query) ||
+          (person.Name?.toLowerCase() || "").includes(query) ||
+          (person.Email?.toLowerCase() || "").includes(query) ||
+          (person.Phone?.toLowerCase() || "").includes(query)
+        );
+      })
+    );
+  }, [searchQuery, people]);
+
+  // ---------------- Sign Out ----------------
+  async function handleSignOut() {
+    const confirm = await Swal.fire({
+      title: "Sign Out?",
+      text: "Are you sure you want to sign out?",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, sign out",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (confirm.isConfirmed) {
+      signOut();
+      toast.success("Signed out successfully");
+      setTimeout(() => router.push("/login"), 1000);
+    }
+  }
+
+  // ---------------- Form Submit (Add / Update) ----------------
+  async function handleFormSubmit(e: FormEvent) {
+    e.preventDefault();
+
+    if (editUserId !== null) {
+      // ---------------- Update ----------------
+      const { error } = await supabase
+        .from("metapeople")
+        .update({
+          user_id: form.user_id,
+          emp_code: form.emp_code,
+          Name: form.Name,
+          Email: form.Email,
+          Phone: form.Phone,
+        })
+        .eq("user_id", editUserId);
+
+      if (error) toast.error(`Update failed: ${error.message}`);
+      else toast.success("Person updated successfully");
+
+      setEditUserId(null);
+    } else {
+      // ---------------- Insert ----------------
+      const { error } = await supabase
+        .from("metapeople")
+        .insert({
+          user_id: form.user_id,
+          emp_code: form.emp_code,
+          Name: form.Name,
+          Email: form.Email,
+          Phone: form.Phone,
+        });
+
+      if (error) toast.error(`Insert failed: ${error.message}`);
+      else toast.success("Person added successfully");
+    }
+
+    resetForm();
+    fetchPeople();
+  }
+
+  function resetForm() {
+    setForm({ user_id: 0, emp_code: "", Name: "", Email: "", Phone: "" });
+  }
+
+  // ---------------- Edit ----------------
+  function handleStudentEdit(person: People) {
+    setForm(person);
+    setEditUserId(person.user_id);
+  }
+
+  // ---------------- Delete Individual ----------------
+  async function handleStudentDelete(user_id: number) {
+    const confirm = await Swal.fire({
+      title: "Are you sure?",
+      text: "This action cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, delete it!",
+    });
+
+    if (confirm.isConfirmed) {
+      const { error } = await supabase.from("metapeople").delete().eq("user_id", user_id);
+      if (error) toast.error(`Delete failed: ${error.message}`);
+      else toast.success("Person deleted successfully");
+
+      fetchPeople();
+    }
+  }
+
+  // ---------------- Delete Selected ----------------
+  async function handleDeleteSelected() {
+    if (selectedIds.length === 0) {
+      toast.error("No rows selected");
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: `Delete ${selectedIds.length} selected record(s)?`,
+      text: "This action cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, delete",
+    });
+
+    if (confirm.isConfirmed) {
+      const { error } = await supabase.from("metapeople").delete().in("user_id", selectedIds);
+      if (error) toast.error(`Delete failed: ${error.message}`);
+      else toast.success(`Deleted ${selectedIds.length} record(s)`);
+
+      setSelectedIds([]);
+      fetchPeople();
+    }
+  }
+
+  // ---------------- Checkbox / Select All ----------------
+  function handleCheckboxChange(userId: number) {
+    setSelectedIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
+  }
+
+  function handleSelectAll() {
+    if (selectedIds.length === filteredPeople.length) setSelectedIds([]);
+    else setSelectedIds(filteredPeople.map((p) => p.user_id));
+  }
+
+  // Don't render until authentication is checked
+  if (!currentUser) {
+    return null;
+  }
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <>
+      <Toaster position="top-center" />
+      <div className="app-container">
+        <div className="content-wrapper">
+          <div className="flex-layout">
+            {/* Left side form */}
+            <div className="form-section">
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <h4>Meta-black Management</h4>
+                    <p style={{ fontSize: "12px", color: "#718096", marginTop: "4px" }}>
+                      Logged in as: {currentUser.email}
+                    </p>
+                  </div>
+                  <button
+                    className="btn-delete"
+                    onClick={handleSignOut}
+                    style={{ marginLeft: "auto" }}
+                  >
+                    Sign Out
+                  </button>
+                </div>
+                <div className="card-body">
+                  <div className="form-group">
+                    <label>user_id</label>
+                    <input
+                      type="number"
+                      value={form.user_id || ""}
+                      onChange={(e) =>
+                        setForm({ ...form, user_id: Number(e.target.value) })
+                      }
+                      disabled={editUserId !== null}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>emp_code</label>
+                    <input
+                      type="text"
+                      value={form.emp_code}
+                      onChange={(e) =>
+                        setForm({ ...form, emp_code: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Name</label>
+                    <input
+                      type="text"
+                      value={form.Name}
+                      onChange={(e) =>
+                        setForm({ ...form, Name: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={form.Email}
+                      onChange={(e) =>
+                        setForm({ ...form, Email: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="text"
+                      value={form.Phone}
+                      onChange={(e) =>
+                        setForm({ ...form, Phone: e.target.value })
+                      }
+                    />
+                  </div>
+                  <button className="btn-primary" onClick={handleFormSubmit}>
+                    {editUserId !== null ? "Update" : "Add"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right side table */}
+            <div className="table-section">
+              <div className="card">
+                <div className="card-header flex-between">
+                  <h5>People List</h5>
+                  <div className="search-actions">
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <button
+                      className={`btn-delete ${
+                        selectedIds.length === 0 ? "disabled" : ""
+                      }`}
+                      onClick={handleDeleteSelected}
+                      disabled={selectedIds.length === 0}
+                    >
+                      Delete Selected ({selectedIds.length})
+                    </button>
+                  </div>
+                </div>
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredPeople.length > 0 &&
+                              selectedIds.length === filteredPeople.length
+                            }
+                            onChange={handleSelectAll}
+                          />
+                        </th>
+                        <th>user_id</th>
+                        <th>emp_code</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPeople.map((singleperson) => (
+                        <tr key={singleperson.user_id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(singleperson.user_id)}
+                              onChange={() =>
+                                handleCheckboxChange(singleperson.user_id)
+                              }
+                            />
+                          </td>
+                          <td>{singleperson.user_id}</td>
+                          <td>{singleperson.emp_code}</td>
+                          <td>{singleperson.Name}</td>
+                          <td>{singleperson.Email}</td>
+                          <td>{singleperson.Phone}</td>
+                          <td>
+                            <button
+                              className="btn-edit"
+                              onClick={() => handleStudentEdit(singleperson)}
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {filteredPeople.length === 0 && (
+                    <div className="no-records">No records found</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
