@@ -88,6 +88,17 @@ export default function Home() {
   async function handleFormSubmit(e: FormEvent) {
     e.preventDefault();
 
+    // Validate form fields
+    if (!form.user_id || form.user_id === 0) {
+      toast.error("User ID is required");
+      return;
+    }
+
+    if (!form.emp_code || form.emp_code.trim() === "") {
+      toast.error("Employee Code is required");
+      return;
+    }
+
     if (editUserId !== null) {
       // ---------------- Update ----------------
       const { error } = await supabase
@@ -130,7 +141,8 @@ export default function Home() {
   }
 
   // ---------------- Edit ----------------
-  function handleStudentEdit(person: People) {
+  function handleStudentEdit(person: People, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent row selection when clicking edit
     setForm(person);
     setEditUserId(person.user_id);
   }
@@ -179,11 +191,14 @@ export default function Home() {
     }
   }
 
-  // ---------------- Checkbox / Select All ----------------
-  function handleCheckboxChange(userId: number) {
-    setSelectedIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
+  // ---------------- Row Selection (Toggle) ----------------
+  function handleRowClick(userId: number) {
+    setSelectedIds((prev) => 
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
   }
 
+  // ---------------- Select All ----------------
   function handleSelectAll() {
     if (selectedIds.length === filteredPeople.length) setSelectedIds([]);
     else setSelectedIds(filteredPeople.map((p) => p.user_id));
@@ -234,7 +249,7 @@ export default function Home() {
                     <label>emp_code</label>
                     <input
                       type="text"
-                      value={form.emp_code}
+                      value={form.emp_code || ""}
                       onChange={(e) =>
                         setForm({ ...form, emp_code: e.target.value })
                       }
@@ -244,7 +259,7 @@ export default function Home() {
                     <label>Name</label>
                     <input
                       type="text"
-                      value={form.Name}
+                      value={form.Name || ""}
                       onChange={(e) =>
                         setForm({ ...form, Name: e.target.value })
                       }
@@ -254,7 +269,7 @@ export default function Home() {
                     <label>Email</label>
                     <input
                       type="email"
-                      value={form.Email}
+                      value={form.Email || ""}
                       onChange={(e) =>
                         setForm({ ...form, Email: e.target.value })
                       }
@@ -264,7 +279,7 @@ export default function Home() {
                     <label>Phone</label>
                     <input
                       type="text"
-                      value={form.Phone}
+                      value={form.Phone || ""}
                       onChange={(e) =>
                         setForm({ ...form, Phone: e.target.value })
                       }
@@ -289,15 +304,14 @@ export default function Home() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                    <button
-                      className={`btn-delete ${
-                        selectedIds.length === 0 ? "disabled" : ""
-                      }`}
-                      onClick={handleDeleteSelected}
-                      disabled={selectedIds.length === 0}
-                    >
-                      Delete Selected ({selectedIds.length})
-                    </button>
+                    {selectedIds.length > 0 && (
+                      <button
+                        className="btn-delete"
+                        onClick={handleDeleteSelected}
+                      >
+                        Delete Selected ({selectedIds.length})
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="table-wrapper">
@@ -324,14 +338,19 @@ export default function Home() {
                     </thead>
                     <tbody>
                       {filteredPeople.map((singleperson) => (
-                        <tr key={singleperson.user_id}>
-                          <td>
+                        <tr 
+                          key={singleperson.user_id}
+                          onClick={() => handleRowClick(singleperson.user_id)}
+                          style={{ 
+                            cursor: 'pointer',
+                            backgroundColor: selectedIds.includes(singleperson.user_id) ? '#f0f9ff' : 'transparent'
+                          }}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={selectedIds.includes(singleperson.user_id)}
-                              onChange={() =>
-                                handleCheckboxChange(singleperson.user_id)
-                              }
+                              onChange={() => handleRowClick(singleperson.user_id)}
                             />
                           </td>
                           <td>{singleperson.user_id}</td>
@@ -342,7 +361,7 @@ export default function Home() {
                           <td>
                             <button
                               className="btn-edit"
-                              onClick={() => handleStudentEdit(singleperson)}
+                              onClick={(e) => handleStudentEdit(singleperson, e)}
                             >
                               Edit
                             </button>
